@@ -20,22 +20,17 @@ CREATE OR REPLACE TABLE ${PROJECT_NAME}.${DATASET_NAME}.MEX_Offer_List
 AS
 WITH
   AllAccounts AS (
+    -- Flat Merchant API v1 accounts: one row per (leaf) account; parent
+    -- self-joined for the aggregator name. Advanced/MCA accounts are excluded.
     SELECT
-      A.settings.id AS merchant_id,
-      A.settings.name AS merchant_name,
-      0 AS aggregator_id,
-      NULL AS aggregator_name,
+      A.account_id AS merchant_id,
+      A.account_name AS merchant_name,
+      IFNULL(A.parent_account, 0) AS aggregator_id,
+      P.account_name AS aggregator_name,
     FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
-    WHERE ARRAY_LENGTH(A.children) = 0
-    UNION ALL
-    SELECT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+    LEFT JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON A.parent_account = P.account_id
+    WHERE NOT A.is_advanced
   ),
   AccountNames AS (
     SELECT DISTINCT

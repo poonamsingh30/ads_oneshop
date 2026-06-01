@@ -1,0 +1,7 @@
+# Local secrets and scratch data — never commit
+env.local.sh
+old_accounts/
+new_accounts/
+*.jsonl
+*.jsonlines
+__pycache__/

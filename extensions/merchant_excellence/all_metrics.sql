@@ -167,44 +167,33 @@ WITH
       P.status.destination_statuses AS DS
   ),
   AllAccounts AS (
+    -- Flat Merchant API v1 accounts: one row per (leaf) account. Advanced/MCA
+    -- accounts are excluded as merchants (is_advanced); the parent account is
+    -- self-joined for the aggregator name and to roll down account-level
+    -- automatic-improvements settings to sub-accounts.
     SELECT
-      A.settings.id AS merchant_id,
-      A.settings.name AS merchant_name,
-      0 AS aggregator_id,
-      NULL AS aggregator_name,
-      IFNULL(
-        A.settings.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
+      A.account_id AS merchant_id,
+      A.account_name AS merchant_name,
+      IFNULL(A.parent_account, 0) AS aggregator_id,
+      P.account_name AS aggregator_name,
+      COALESCE(
+        A.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements,
+        P.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements,
         FALSE)
         AS has_image_aiu_enabled,
-      IFNULL(
-        A.settings.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR A.settings.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates,
+      COALESCE(
+        (
+          A.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR A.automatic_improvements.item_updates.effective_allow_availability_updates),
+        (
+          P.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR P.automatic_improvements.item_updates.effective_allow_availability_updates),
         FALSE)
         AS has_availability_aiu_enabled,
     FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
-    WHERE ARRAY_LENGTH(A.children) = 0
-    UNION ALL
-    SELECT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-      COALESCE(
-        C.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
-        A.settings.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
-        FALSE)
-        AS has_image_aiu_enabled,
-      COALESCE(
-        (
-          C.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR C.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates),
-        (
-          A.settings.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR A.settings.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates),
-        FALSE) AS has_availability_aiu_enabled,
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+    LEFT JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON A.parent_account = P.account_id
+    WHERE NOT A.is_advanced
   ),
   AccountNames AS (
     SELECT DISTINCT
@@ -393,22 +382,17 @@ WITH
       ON BD.metric_name = BV.metric_name
   ),
   AllAccounts AS (
+    -- Flat Merchant API v1 accounts: one row per (leaf) account; parent
+    -- self-joined for the aggregator name. Advanced/MCA accounts are excluded.
     SELECT
-      A.settings.id AS merchant_id,
-      A.settings.name AS merchant_name,
-      0 AS aggregator_id,
-      NULL AS aggregator_name,
+      A.account_id AS merchant_id,
+      A.account_name AS merchant_name,
+      IFNULL(A.parent_account, 0) AS aggregator_id,
+      P.account_name AS aggregator_name,
     FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
-    WHERE ARRAY_LENGTH(A.children) = 0
-    UNION ALL
-    SELECT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+    LEFT JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON A.parent_account = P.account_id
+    WHERE NOT A.is_advanced
   ),
   AccountNames AS (
     SELECT DISTINCT

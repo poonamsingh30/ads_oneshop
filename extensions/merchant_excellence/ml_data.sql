@@ -20,13 +20,18 @@ CREATE OR REPLACE TABLE ${PROJECT_NAME}.${DATASET_NAME}.MEX_ML_Data
 AS
 WITH
   AccountNames AS (
+    -- Flat Merchant API v1 accounts. The INNER JOIN to the parent restricts to
+    -- sub-accounts of advanced/MCA accounts, matching the original behavior of
+    -- cross-joining only `accounts.children`. C = sub-account, P = aggregator.
     SELECT DISTINCT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-      CONCAT(C.name, ' (', C.id, ')') AS merchant_name_with_id
-    FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A, A.children AS C
+      C.account_id AS merchant_id,
+      C.account_name AS merchant_name,
+      P.account_id AS aggregator_id,
+      P.account_name AS aggregator_name,
+      CONCAT(C.account_name, ' (', CAST(C.account_id AS STRING), ')') AS merchant_name_with_id
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS C
+    JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON C.parent_account = P.account_id
   ),
   Lia AS (
     SELECT DISTINCT
@@ -69,33 +74,35 @@ WITH
   FROM ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings AS S
   ),
   Account AS (
+    -- C = sub-account, P = aggregator/parent (INNER JOIN keeps MCA children only).
     SELECT DISTINCT
-      C.id AS merchant_id,
-      A.settings.id AS aggregator_id,
+      C.account_id AS merchant_id,
+      P.account_id AS aggregator_id,
       ALS.has_account_level_shipping,
       IFNULL(
-        C.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
-        A.settings.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements)
+        C.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements,
+        P.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements)
         AS has_image_aiu_enabled,
       IFNULL(
         (
-          C.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR C.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates),
+          C.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR C.automatic_improvements.item_updates.effective_allow_availability_updates),
         (
-          A.settings.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR A.settings.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates))
+          P.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR P.automatic_improvements.item_updates.effective_allow_availability_updates))
         AS has_availability_aiu_enabled,
       L.lia_has_lia_implemented,
       L.lia_has_mhlsf_implemented,
       L.lia_has_store_pickup_implemented,
       L.lia_has_odo_implemented
     FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS C
+    JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON C.parent_account = P.account_id
     LEFT JOIN AccountLevelShipping AS ALS
-      ON ALS.merchant_id = C.id
+      ON ALS.merchant_id = C.account_id
     LEFT JOIN Lia AS L
-      ON L.merchant_id = C.id
+      ON L.merchant_id = C.account_id
   ),
   AdsStats AS (
     SELECT

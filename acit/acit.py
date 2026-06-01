@@ -24,6 +24,7 @@ from absl import app
 from absl import flags
 from absl import logging
 from acit import gaql
+from acit import merchant_accounts
 from acit import resource_downloader
 from etils import epath
 from google import auth
@@ -230,15 +231,13 @@ _ACIT_MC_RESOURCES = [
     'productstatuses',
 ]
 
-_ACIT_MC_ACCOUNT_RESOURCE = 'accounts'
 _ACIT_MC_SHIPPINGSETTINGS_RESOURCE = 'shippingsettings'
 
-# Rolled-down settings.
-# Each resultant file will have exactly one entry.
-# If that entry is from an MCA, it will have a 'children' key.
-_ACIT_ACCOUNT_RESOURCES = [
-    _ACIT_MC_ACCOUNT_RESOURCE,
-]
+# NOTE: The `accounts` resource is no longer pulled here. As of the Merchant API
+# migration (Phase 1), accounts are ingested via `merchant_accounts` in the
+# native Merchant API v1 shape. The Content-API account-level resources below
+# (liasettings, shippingsettings) are still rolled down from MCAs: each
+# resulting file has exactly one entry, with a 'children' key when from an MCA.
 
 # Additional resources which are only available to admins.
 _ACIT_ACCOUNT_ADMIN_RESOURCES = [
@@ -494,41 +493,24 @@ def main(_):
   # dealing with.
 
   input_ids = set(_MERCHANT_CENTER_IDS.value)
-  # Preload Merchant Center authinfo so we know which accounts (for this
-  # user) are top-level.
-  # The sets of accessible aggregators and standlone accounts
   merchant_api = _get_merchant_center_api()
-  aggregator_ids: Set[str] = set()
-  standalone_ids: Set[str] = set()
-  # All leaf accounts we will actually process
-  leaf_ids: Set[str] = set()
 
-  leaf_to_parent = {}
+  # Phase 1 migration: the `accounts` resource is now ingested from the Merchant
+  # API (stable v1) instead of the Content API. This writes the flat, native-v1
+  # per-account files and returns the account topology (advanced/MCA vs
+  # standalone, plus the sub-account -> parent mapping) that drives the remaining
+  # Content-API resource pulls below.
+  aggregator_ids, standalone_ids, leaf_to_parent = (
+      merchant_accounts.download_accounts(creds, input_ids, mc_path)
+  )
+  # All leaf (sub-) accounts we will actually process for product-level data.
+  leaf_ids: Set[str] = set(leaf_to_parent)
 
-  for result in resource_downloader.download_resources(
-      client=merchant_api,
-      resource_name='accounts',
-      params={},
-      parent_resource='',
-      parent_params={},
-      resource_method='authinfo',
-      result_path='',
-      metadata={},
-      is_scalar=True,
-  ):
-    for account_identifier in result.get('accountIdentifiers', []):
-      # Users may only be present in one account.
-      # Aggregator IDs are optional in leaves.
-      # We must check for merchantId first.
-      if 'merchantId' in account_identifier:
-        standalone_ids.add(account_identifier['merchantId'])
-      else:
-        aggregator_ids.add(account_identifier['aggregatorId'])
-
-  # Decide which resources to pull
-  acit_account_resources = _ACIT_ACCOUNT_RESOURCES
+  # Decide which (still Content-API) account-level resources to pull. `accounts`
+  # is handled above via the Merchant API and is intentionally excluded here.
+  acit_account_resources: list[str] = []
   if _ADMIN_RIGHTS.value:
-    acit_account_resources += _ACIT_ACCOUNT_ADMIN_RESOURCES
+    acit_account_resources = list(_ACIT_ACCOUNT_ADMIN_RESOURCES)
 
   # Top-level settings must roll down  (if they exist) from MCAs.
   # Top-level settings include image enhancement, LIA, Ads links, etc
@@ -569,9 +551,6 @@ def main(_):
             metadata={'parentId': aggregator_id},
         ):
           children.append(child)
-          if name == _ACIT_MC_ACCOUNT_RESOURCE:
-            leaf_to_parent[child['id']] = aggregator_id
-            leaf_ids.add(child['id'])
 
         # Wait until the end so the parent has all children
         output_file = mc_path / aggregator_id / name / 'rows.jsonlines'
