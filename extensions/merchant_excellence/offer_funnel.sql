@@ -104,12 +104,12 @@ AS (
         EXISTS(
           SELECT 1
           FROM P.status.destination_statuses
-          WHERE destination = 'SurfacesAcrossGoogle'
+          WHERE reporting_context = 'FREE_LISTINGS'
         ) AS has_free_listings_enabled,
         EXISTS(
           SELECT 1
           FROM P.status.destination_statuses
-          WHERE destination = 'DisplayAds'
+          WHERE reporting_context = 'DEMAND_GEN_ADS'
         ) AS has_dynamic_remarketing_enabled,
       FROM
         ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
@@ -135,7 +135,7 @@ AS (
       LEFT JOIN P.status.destination_statuses AS DS
       INNER JOIN EnabledDestinations AS ED
         ON ED.product_id = P.offer_id
-      WHERE DS.destination = 'Shopping'
+      WHERE DS.reporting_context = 'SHOPPING_ADS'
     ),
     ItemIssues AS (
       SELECT
@@ -147,7 +147,7 @@ AS (
         ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
         P.status.item_level_issues AS ILI,
         ILI.applicable_countries AS country
-      WHERE ILI.destination = 'Shopping'
+      WHERE ILI.reporting_context = 'SHOPPING_ADS'
       GROUP BY
         merchant_id,
         product_id,
@@ -179,21 +179,21 @@ AS (
         PSC.merchant_id,
         PSC.channel,
         PSC.targeted_country,
-        IFNULL(P.product.brand, '') AS brand,
-        IFNULL(P.product.custom_label0, '') AS custom_label_0,
-        IFNULL(P.product.custom_label1, '') AS custom_label_1,
-        IFNULL(P.product.custom_label2, '') AS custom_label_2,
-        IFNULL(P.product.custom_label3, '') AS custom_label_3,
-        IFNULL(P.product.custom_label4, '') AS custom_label_4,
-        IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
+        IFNULL(P.product.product_attributes.brand, '') AS brand,
+        IFNULL(P.product.product_attributes.custom_label_0, '') AS custom_label_0,
+        IFNULL(P.product.product_attributes.custom_label_1, '') AS custom_label_1,
+        IFNULL(P.product.product_attributes.custom_label_2, '') AS custom_label_2,
+        IFNULL(P.product.product_attributes.custom_label_3, '') AS custom_label_3,
+        IFNULL(P.product.product_attributes.custom_label_4, '') AS custom_label_4,
+        IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
           AS product_type_lvl1,
-        IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
+        IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
           AS product_type_lvl2,
-        IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
+        IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
           AS product_type_lvl3,
         PSC.product_id,
         NOT PSC.is_disapproved AS is_approved,
-        P.product.availability != 'out of stock' AS is_in_stock,
+        P.product.product_attributes.availability != 'OUT_OF_STOCK' AS is_in_stock,
         (P.has_shopping_targeting OR P.has_performance_max_targeting) AS is_targeted,
         IFNULL(AD.impressions_last30days, 0) > 0 AS had_impressions,
         IFNULL(AD.clicks_last30days, 0) > 0 AS had_clicks,

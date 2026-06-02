@@ -183,7 +183,11 @@ def main(argv):
         )
     )
 
-    # Merchant Center data
+    # Merchant Center data.
+    #
+    # As of the Merchant API migration (Phase 2), each line is a native v1
+    # `Product` that already embeds its status (`product_status`). There is no
+    # longer a separate `productstatuses` collection / join.
     products = (
         p
         | 'Read Products'
@@ -191,15 +195,6 @@ def main(argv):
             f'{source_dir}/merchant_center/*/products/*.jsonlines'
         )
         | 'Products to JSON' >> beam.Map(json.loads)
-    )
-
-    product_statuses = (
-        p
-        | 'Read Product Statuses'
-        >> textio.ReadFromText(
-            f'{source_dir}/merchant_center/*/productstatuses/*.jsonlines'
-        )
-        | 'Product Statuses to JSON' >> beam.Map(json.loads)
     )
 
     def convert_lia_settings(row):
@@ -328,48 +323,26 @@ def main(argv):
         | 'Group PMax Listing Group Trees by Campaign ID' >> beam.GroupByKey()
     )
 
-    # First, join all products and their 1:1 statuses
+    def split_v1_product(p):
+      """Splits a native v1 Product into the wide record the pipeline expects.
+
+      In the Merchant API a `Product` carries its status inline, so instead of a
+      products<->statuses join we split `product_status` out into `status` and
+      derive the `channel` dimension (the Ads `performance` FK still keys on
+      channel; v1 exposes only the `legacy_local` boolean).
+      """
+      account_id = p[resource_downloader.METADATA_KEY]['accountId']
+      status = p.pop('product_status', None) or {}
+      p['channel'] = 'local' if p.get('legacy_local') else 'online'
+      return {
+          'accountId': account_id,
+          'offerId': p.get('offer_id'),
+          'product': p,
+          'status': status,
+      }
+
     product_statuses = (
-        {
-            'products': products | 'Prep products for join' >> beam.Map(
-                lambda p: (
-                    (
-                        p[resource_downloader.METADATA_KEY]['accountId'],
-                        p['id'],
-                    ),
-                    p,
-                )
-            ),
-            'statuses': (
-                product_statuses
-                | 'Prep product statuses for join'
-                >> beam.Map(
-                    lambda p: (
-                        (
-                            p[resource_downloader.METADATA_KEY]['accountId'],
-                            p['productId'],
-                        ),
-                        p,
-                    )
-                )
-            ),
-        }
-        | 'Group product tables' >> beam.CoGroupByKey()
-        | 'Join product tables where possible'
-        # Downloaders may suffer from race conditions
-        >> beam.FlatMapTuple(
-            # TODO: b/398293705 - Refactor lambdas here and elsewhere
-            # pylint: disable=g-long-ternary
-            lambda k, v: [{
-                'accountId': k[0],
-                'offerId': k[1],
-                # Guaranteed to be 1 of each if we reach here
-                'product': v['products'][0],
-                'status': v['statuses'][0],
-            }]
-            if v['products'] and v['statuses']
-            else []
-        )
+        products | 'Build wide product records' >> beam.Map(split_v1_product)
     )
 
     all_products = (
@@ -419,8 +392,9 @@ def main(argv):
 
     def products_table_row(row):
       """Prepare data for JSON serialization."""
-      del row['product']['downloaderMetadata']
-      del row['status']['downloaderMetadata']
+      # The v1 product carries the downloader metadata; status is derived from it
+      # and has none of its own.
+      row['product'].pop('downloaderMetadata', None)
       msg = schema_pb2.WideProduct()
       json_format.ParseDict(row, msg, ignore_unknown_fields=True)
       return json_format.MessageToDict(msg, preserving_proto_field_name=True)

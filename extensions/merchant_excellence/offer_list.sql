@@ -75,7 +75,7 @@ WITH
       EXISTS(
         SELECT 1
         FROM P.status.destination_statuses
-        WHERE destination = 'SurfacesAcrossGoogle'
+        WHERE reporting_context = 'FREE_LISTINGS'
       ) AS has_free_listings_enabled,
     FROM
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
@@ -100,7 +100,7 @@ WITH
     LEFT JOIN P.status.destination_statuses AS DS
     LEFT JOIN EnabledDestinations AS ED
       ON ED.product_id = P.offer_id
-    WHERE DS.destination = 'Shopping'
+    WHERE DS.reporting_context = 'SHOPPING_ADS'
   ),
   ItemIssues AS (
     SELECT
@@ -112,7 +112,7 @@ WITH
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
       P.status.item_level_issues AS ILI,
       ILI.applicable_countries AS country
-    WHERE ILI.destination = 'Shopping'
+    WHERE ILI.reporting_context = 'SHOPPING_ADS'
     GROUP BY
       merchant_id,
       product_id,
@@ -203,34 +203,33 @@ WITH
       PSC.has_free_listings_enabled,
       P.product.offer_id AS item_id,
       P.product.content_language AS language,
-      IFNULL(P.product.brand, '') AS brand,
-      IFNULL(P.product.custom_label0, '') AS custom_label_0,
-      IFNULL(P.product.custom_label1, '') AS custom_label_1,
-      IFNULL(P.product.custom_label2, '') AS custom_label_2,
-      IFNULL(P.product.custom_label3, '') AS custom_label_3,
-      IFNULL(P.product.custom_label4, '') AS custom_label_4,
-      IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
+      IFNULL(P.product.product_attributes.brand, '') AS brand,
+      IFNULL(P.product.product_attributes.custom_label_0, '') AS custom_label_0,
+      IFNULL(P.product.product_attributes.custom_label_1, '') AS custom_label_1,
+      IFNULL(P.product.product_attributes.custom_label_2, '') AS custom_label_2,
+      IFNULL(P.product.product_attributes.custom_label_3, '') AS custom_label_3,
+      IFNULL(P.product.product_attributes.custom_label_4, '') AS custom_label_4,
+      IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
         AS product_type_lvl1,
-      IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
+      IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
         AS product_type_lvl2,
-      IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
+      IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
         AS product_type_lvl3,
-      P.product.gtin,
-      P.product.description,
-      P.product.title,
-      P.product.color,
-      P.product.age_group,
-      P.product.gender,
-      P.product.sizes,
-      P.product.additional_image_links,
-      P.product.sale_price,
-      P.product.item_group_id,
-      P.product.product_types,
-      P.product.product_highlights,
-      P.product.source,
-      P.product.shipping,
-      P.product.lifestyle_image_links,
-      P.product.cost_of_goods_sold,
+      P.product.product_attributes.gtins[SAFE_ORDINAL(1)] AS gtin,
+      P.product.product_attributes.description,
+      P.product.product_attributes.title,
+      P.product.product_attributes.color,
+      P.product.product_attributes.age_group,
+      P.product.product_attributes.gender,
+      P.product.product_attributes.size,
+      P.product.product_attributes.additional_image_links,
+      P.product.product_attributes.sale_price,
+      P.product.product_attributes.item_group_id,
+      P.product.product_attributes.product_types,
+      P.product.product_attributes.product_highlights,
+      P.product.product_attributes.shipping,
+      P.product.product_attributes.lifestyle_image_links,
+      P.product.product_attributes.cost_of_goods_sold,
       (P.has_shopping_targeting OR P.has_performance_max_targeting) AS has_targeting,
       IFNULL(AD.impressions_last30days, 0) > 0 AS had_impressions,
       IFNULL(AD.clicks_last30days, 0) > 0 AS had_clicks,
@@ -375,9 +374,8 @@ WITH
       'no size' AS data_quality_flag,
     FROM Products
     WHERE
-      -- TODO: check if this logic works for offers without Sizes
-      -- Currently all offers in this test feed have the attribute
-      ARRAY_LENGTH(IFNULL(sizes, [])) = 0
+      -- v1 exposes a single `size` string (was the repeated `sizes`).
+      IFNULL(size, '') = ''
   ),
   OffersWith3AdditionalImages AS (
     SELECT DISTINCT
@@ -423,7 +421,7 @@ WITH
       'no sale price' AS data_quality_flag,
     FROM Products
     WHERE
-      IFNULL(CAST(sale_price.value AS FLOAT64), 0) = 0
+      IFNULL(sale_price.amount_micros, 0) = 0
   ),
   OffersWithItemGroupId AS (
     SELECT DISTINCT
@@ -607,20 +605,6 @@ WITH
       channel = 'local'
       AND is_disapproved
   ),
-  OffersUploadedViaApi AS (
-    SELECT DISTINCT
-      merchant_id,
-      aggregator_id,
-      channel,
-      item_id,
-      targeted_country,
-      language,
-      'products uploaded via API' AS metric_name,
-      'product not upload via API' AS data_quality_flag,
-    FROM Products
-    WHERE
-      source != 'api'
-  ),
   OffersWithShipping AS (
     SELECT DISTINCT
       merchant_id,
@@ -706,7 +690,7 @@ WITH
         AND NOT EXISTS(
           SELECT *
           FROM P.shipping
-          WHERE CAST(price.value AS FLOAT64) = 0
+          WHERE IFNULL(price.amount_micros, 0) = 0
         ))
       OR (
         ARRAY_LENGTH(IFNULL(shipping, [])) = 0
@@ -782,7 +766,7 @@ WITH
       'no cost_of_goods_sold' AS data_quality_flag,
     FROM Products
     WHERE
-      CAST(IFNULL(cost_of_goods_sold.value, '0') AS FLOAT64) = 0
+      IFNULL(cost_of_goods_sold.amount_micros, 0) = 0
   ),
   AllMetrics AS (
     SELECT * FROM DisapprovedOffers
@@ -830,8 +814,6 @@ WITH
     SELECT * FROM OffersWithPriceAvailabilityConditionAIU
     UNION ALL
     SELECT * FROM LiaOffersApproved
-    UNION ALL
-    SELECT * FROM OffersUploadedViaApi
     UNION ALL
     SELECT * FROM OffersWithShipping
     UNION ALL

@@ -160,7 +160,7 @@ WITH
       EXISTS(
         SELECT 1
         FROM P.status.destination_statuses
-        WHERE destination = 'SurfacesAcrossGoogle'
+        WHERE reporting_context = 'FREE_LISTINGS'
       ) AS has_free_listings_enabled,
     FROM
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
@@ -264,7 +264,7 @@ WITH
     LEFT JOIN P.status.destination_statuses AS DS
     LEFT JOIN EnabledDestinations AS ED
       ON ED.product_id = P.offer_id
-    WHERE DS.destination = 'Shopping'
+    WHERE DS.reporting_context = 'SHOPPING_ADS'
   ),
   ItemIssues AS (
     SELECT
@@ -276,7 +276,7 @@ WITH
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
       P.status.item_level_issues AS ILI,
       ILI.applicable_countries AS country
-    WHERE ILI.destination = 'Shopping'
+    WHERE ILI.reporting_context = 'SHOPPING_ADS'
     GROUP BY
       merchant_id,
       product_id,
@@ -311,34 +311,33 @@ SELECT
   PSC.item_issues,
   PSC.has_free_listings_enabled,
   P.product.offer_id AS item_id,
-  IFNULL(P.product.brand, '') AS brand,
-  IFNULL(P.product.custom_label0, '') AS custom_label_0,
-  IFNULL(P.product.custom_label1, '') AS custom_label_1,
-  IFNULL(P.product.custom_label2, '') AS custom_label_2,
-  IFNULL(P.product.custom_label3, '') AS custom_label_3,
-  IFNULL(P.product.custom_label4, '') AS custom_label_4,
-  IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
+  IFNULL(P.product.product_attributes.brand, '') AS brand,
+  IFNULL(P.product.product_attributes.custom_label_0, '') AS custom_label_0,
+  IFNULL(P.product.product_attributes.custom_label_1, '') AS custom_label_1,
+  IFNULL(P.product.product_attributes.custom_label_2, '') AS custom_label_2,
+  IFNULL(P.product.product_attributes.custom_label_3, '') AS custom_label_3,
+  IFNULL(P.product.product_attributes.custom_label_4, '') AS custom_label_4,
+  IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
     AS product_type_lvl1,
-  IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
+  IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
     AS product_type_lvl2,
-  IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
+  IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
     AS product_type_lvl3,
-  P.product.gtin,
-  P.product.description,
-  P.product.title,
-  P.product.color,
-  P.product.age_group,
-  P.product.gender,
-  P.product.sizes,
-  P.product.additional_image_links,
-  P.product.lifestyle_image_links,
-  P.product.sale_price,
-  P.product.item_group_id,
-  P.product.product_types,
-  P.product.product_highlights,
-  P.product.source,
-  P.product.shipping,
-  P.product.cost_of_goods_sold,
+  P.product.product_attributes.gtins[SAFE_ORDINAL(1)] AS gtin,
+  P.product.product_attributes.description,
+  P.product.product_attributes.title,
+  P.product.product_attributes.color,
+  P.product.product_attributes.age_group,
+  P.product.product_attributes.gender,
+  P.product.product_attributes.size,
+  P.product.product_attributes.additional_image_links,
+  P.product.product_attributes.lifestyle_image_links,
+  P.product.product_attributes.sale_price,
+  P.product.product_attributes.item_group_id,
+  P.product.product_attributes.product_types,
+  P.product.product_attributes.product_highlights,
+  P.product.product_attributes.shipping,
+  P.product.product_attributes.cost_of_goods_sold,
   (P.has_shopping_targeting OR P.has_performance_max_targeting) AS has_targeting,
   IFNULL(AD.impressions_last30days, 0) > 0 AS had_impressions,
   IFNULL(AD.clicks_last30days, 0) > 0 AS had_clicks,
@@ -738,7 +737,7 @@ WITH
       COUNT(*) AS metric_value
     FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
     WHERE
-      ARRAY_LENGTH(sizes) > 0
+      IFNULL(size, '') != ''
     GROUP BY
       merchant_id,
       channel,
@@ -878,7 +877,7 @@ WITH
       COUNT(*) AS metric_value
     FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
     WHERE
-      CAST(sale_price.value AS FLOAT64) > 0
+      IFNULL(sale_price.amount_micros, 0) > 0
     GROUP BY
       merchant_id,
       channel,
@@ -1368,40 +1367,6 @@ WITH
       brand,
       metric_name
   ),
-  OffersUploadedViaApi AS (
-    SELECT
-      merchant_id,
-      channel,
-      targeted_country,
-      product_type_lvl1,
-      product_type_lvl2,
-      product_type_lvl3,
-      custom_label_0,
-      custom_label_1,
-      custom_label_2,
-      custom_label_3,
-      custom_label_4,
-      brand,
-      'products uploaded via API' AS metric_name,
-      COUNT(*) AS metric_value
-    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
-    WHERE
-      source = 'api'
-    GROUP BY
-      merchant_id,
-      channel,
-      targeted_country,
-      product_type_lvl1,
-      product_type_lvl2,
-      product_type_lvl3,
-      custom_label_0,
-      custom_label_1,
-      custom_label_2,
-      custom_label_3,
-      custom_label_4,
-      brand,
-      metric_name
-  ),
   OffersWithShipping AS (
     SELECT
       merchant_id,
@@ -1542,7 +1507,7 @@ WITH
       EXISTS(
         SELECT *
         FROM TP.shipping
-        WHERE CAST(price.value AS FLOAT64) = 0
+        WHERE IFNULL(price.amount_micros, 0) = 0
       )
       OR (has_account_level_free_shipping AND ARRAY_LENGTH(shipping) = 0)
     GROUP BY
@@ -1832,7 +1797,7 @@ WITH
       '% items with cost_of_goods_sold' AS metric_name,
       COUNT(*) AS metric_value
     FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
-    WHERE CAST(cost_of_goods_sold.value AS FLOAT64) > 0
+    WHERE IFNULL(cost_of_goods_sold.amount_micros, 0) > 0
     GROUP BY
       merchant_id,
       channel,
@@ -1898,8 +1863,6 @@ WITH
     SELECT * FROM LiaItemsWithNoInventory
     UNION ALL
     SELECT * FROM LiaOffersApproved
-    UNION ALL
-    SELECT * FROM OffersUploadedViaApi
     UNION ALL
     SELECT * FROM OffersWithShipping
     UNION ALL

@@ -25,6 +25,7 @@ from absl import flags
 from absl import logging
 from acit import gaql
 from acit import merchant_accounts
+from acit import merchant_products
 from acit import resource_downloader
 from etils import epath
 from google import auth
@@ -225,19 +226,16 @@ _ACIT_ADS_OUTPUT_DIR = 'ads'
 
 _ACIT_MC_OUTPUT_DIR = 'merchant_center'
 
-# Leaf-only resources
-_ACIT_MC_RESOURCES = [
-    'products',
-    'productstatuses',
-]
-
 _ACIT_MC_SHIPPINGSETTINGS_RESOURCE = 'shippingsettings'
 
-# NOTE: The `accounts` resource is no longer pulled here. As of the Merchant API
-# migration (Phase 1), accounts are ingested via `merchant_accounts` in the
-# native Merchant API v1 shape. The Content-API account-level resources below
-# (liasettings, shippingsettings) are still rolled down from MCAs: each
-# resulting file has exactly one entry, with a 'children' key when from an MCA.
+# NOTE: The `accounts` resource (Phase 1) and the `products`/`productstatuses`
+# resources (Phase 2) are no longer pulled from the Content API here. Accounts
+# are ingested via `merchant_accounts` and products via `merchant_products`, both
+# in the native Merchant API v1 shape (in v1 a `Product` already carries its
+# status, so `productstatuses` no longer exists as a separate collection). The
+# Content-API account-level resources below (liasettings, shippingsettings) are
+# still rolled down from MCAs: each resulting file has exactly one entry, with a
+# 'children' key when from an MCA.
 
 # Additional resources which are only available to admins.
 _ACIT_ACCOUNT_ADMIN_RESOURCES = [
@@ -323,28 +321,6 @@ def _pull_standalone_account_resource(
         )
       else:
         raise e
-
-
-def _pull_leaf_collection(acit_mc_output_dir, account_id, resource):
-  merchant_api = _get_merchant_center_api()
-  logging.info('...pulling resource %s...', resource)
-  output_file = (
-      epath.Path(acit_mc_output_dir) / account_id / resource / 'rows.jsonlines'
-  )
-  output_file.parent.mkdir(parents=True, exist_ok=True)
-  with output_file.open(mode='w') as f:
-    for result in resource_downloader.download_resources(
-        client=merchant_api,
-        resource_name=resource,
-        # Yes, 'merchantId' is inconsistent with the rest of the API.
-        params={'merchantId': account_id, 'maxResults': 250},
-        parent_resource='',
-        parent_params={},
-        resource_method='list',
-        result_path='resources',
-        metadata={'accountId': account_id},
-    ):
-      print(json.dumps(result), file=f)
 
 
 def _parse_login_customer_ids(customer_ids: list[str]) -> list[tuple[str, str]]:
@@ -559,12 +535,22 @@ def main(_):
         with output_file.open('w') as f:
           print(json.dumps(parent), file=f)
 
-  # Process all non-aggregator account data in parallel
+  product_account_ids = leaf_ids | (standalone_ids & input_ids)
+
+  # Phase 2 migration: products are ingested from the Merchant API (stable v1)
+  # instead of the Content API. The v1 `Product` already carries its status, so
+  # there is no separate `productstatuses` pull. This writes the native-v1 per-
+  # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
+  # unchanged); the Beam stage splits out status and derives the channel.
+  merchant_products.download_products(creds, product_account_ids, mc_path)
+
+  # Process the remaining (still Content-API) standalone account-level admin
+  # resources in parallel.
   with futures.ProcessPoolExecutor(
       mp_context=mp.get_context('spawn')
   ) as executor:
     future_results: dict[futures.Future[None], str] = {}
-    for account_id in leaf_ids | (standalone_ids & input_ids):
+    for account_id in product_account_ids:
       logging.info('Processing Merchant Center ID %s...', account_id)
       # We need account-level resources
       parent_id = leaf_to_parent.get(account_id, account_id)
@@ -578,12 +564,6 @@ def main(_):
               resource,
           )
           future_results[future] = f'{parent_id}/{resource}/{account_id}'
-
-      for resource in _ACIT_MC_RESOURCES:
-        future = executor.submit(
-            _pull_leaf_collection, str(mc_path), account_id, resource
-        )
-        future_results[future] = f'{parent_id}/{resource}/{account_id}'
 
     for completed in futures.as_completed(future_results):
       api_path = future_results[completed]

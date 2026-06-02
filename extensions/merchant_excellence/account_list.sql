@@ -126,7 +126,7 @@ WITH
       EXISTS(
         SELECT 1
         FROM P.status.destination_statuses
-        WHERE destination = 'SurfacesAcrossGoogle'
+        WHERE reporting_context = 'FREE_LISTINGS'
       ) AS has_free_listings_enabled,
     FROM
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,

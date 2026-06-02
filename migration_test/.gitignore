@@ -1,7 +1,10 @@
 # Local secrets and scratch data — never commit
 env.local.sh
+# Per-phase scratch data dumps (accounts, products, …)
 old_accounts/
 new_accounts/
+old_products/
+new_products/
 *.jsonl
 *.jsonlines
 __pycache__/
