@@ -12,75 +12,34 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+-- Phase 3: native Merchant API v1 omnichannel settings. FLAT shape -- one row per
+-- (sub-/standalone) account with a repeated per-region `omnichannel_settings`
+-- list (the old {settings, children[]} envelope is gone). Mirrors the proto
+-- `OmnichannelLiaSettings` (acit/api/v0/storage/schema.proto); the production
+-- table is created from the generated `liasettings.schema`, so this fallback DDL
+-- only needs to match column names/types.
 CREATE TABLE IF NOT EXISTS ${PROJECT_NAME}.${DATASET_NAME}.liasettings (
-    settings STRUCT<
-        account_id INT64,
-        country_settings ARRAY<
-            STRUCT<
-                country STRING,
-                inventory STRUCT<
-                    status STRING,
-                    inventory_verification_contact_name STRING,
-                    inventory_verification_contact_email STRING,
-                    inventory_verification_contact_status STRING
-                >,
-                on_display_to_order STRUCT<
-                    status STRING,
-                    shipping_cost_policy_url STRING
-                >,
-                hosted_local_storefront_active BOOL,
-                store_pickup_active BOOL,
-                about STRUCT<
-                    status STRING,
-                    url STRING
-                >,
-                pos_data_provider STRUCT<
-                    pos_data_provider_id INT64,
-                    pos_external_account_id STRING
-                >,
-                omnichannel_experience STRUCT<
-                    country STRING,
-                    lsf_type STRING,
-                    pickup_types ARRAY<STRING>
-                >
-            >
-        >,
-        kind STRING
-    >,
-    children ARRAY<
+    account_id INT64,
+    omnichannel_settings ARRAY<
         STRUCT<
-            account_id INT64,
-            country_settings ARRAY<
-                STRUCT<
-                    country STRING,
-                    inventory STRUCT<
-                        status STRING,
-                        inventory_verification_contact_name STRING,
-                        inventory_verification_contact_email STRING,
-                        inventory_verification_contact_status STRING
-                    >,
-                    on_display_to_order STRUCT<
-                        status STRING,
-                        shipping_cost_policy_url STRING
-                    >,
-                    hosted_local_storefront_active BOOL,
-                    store_pickup_active BOOL,
-                    about STRUCT<
-                        status STRING,
-                        url STRING
-                    >,
-                    pos_data_provider STRUCT<
-                        pos_data_provider_id INT64,
-                        pos_external_account_id STRING
-                    >,
-                    omnichannel_experience STRUCT<
-                        country STRING,
-                        lsf_type STRING,
-                        pickup_types ARRAY<STRING>
-                    >
-                >
+            name STRING,
+            region_code STRING,
+            lsf_type STRING,
+            in_stock STRUCT<uri STRING, state STRING>,
+            pickup STRUCT<uri STRING, state STRING>,
+            lfp_link STRUCT<
+                lfp_provider STRING,
+                external_account_id STRING,
+                state STRING
             >,
-            kind STRING
+            odo STRUCT<uri STRING, state STRING>,
+            about STRUCT<uri STRING, state STRING>,
+            inventory_verification STRUCT<
+                state STRING,
+                contact STRING,
+                contact_email STRING,
+                contact_state STRING
+            >
         >
     >
 );

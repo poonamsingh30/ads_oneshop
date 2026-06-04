@@ -5,6 +5,9 @@ old_accounts/
 new_accounts/
 old_products/
 new_products/
+old_liasettings/
+new_liasettings/
+compare_liasettings_result.json
 *.jsonl
 *.jsonlines
 __pycache__/

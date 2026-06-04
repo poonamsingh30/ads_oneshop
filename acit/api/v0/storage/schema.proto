@@ -44,12 +44,19 @@ message WideProduct {
   optional string account_id = 12;
 }
 
-message CombinedLiaSettings {
+// Phase 3 migration: Content API `liasettings` -> Merchant API v1
+// `OmnichannelSettings`. v1 has no `liasettings` resource, no MCA roll-down
+// `list`, and the aggregator itself is not a valid parent (PermissionDenied), so
+// settings are listed per (sub)account directly. We therefore drop the old
+// {settings, children[]} envelope and write one FLAT row per account, each with a
+// repeated list of per-region OmnichannelSetting. The MCA<->child relationship is
+// recovered downstream from the (already migrated) `accounts` table.
+message OmnichannelLiaSettings {
   option (gen_bq_schema.bigquery_opts).table_name = "liasettings";
 
-  optional LiaSettings settings = 1;
+  optional int64 account_id = 1;
 
-  repeated LiaSettings children = 2;
+  repeated OmnichannelSetting omnichannel_settings = 2;
 }
 
 // === Merchant API v1 Product ===
@@ -342,64 +349,63 @@ message ItemLevelIssue {
   repeated string applicable_countries = 9;
 }
 
-message LiaSettings {
-  optional uint64 account_id = 1;
+// Native Merchant API v1 omnichannel (Local Inventory Ads) setting -- one per
+// region, replacing the old LiaCountrySettings. Enums are stored as their NAME
+// strings (e.g. "ACTIVE", "LSF_TYPE_UNSPECIFIED", "GHLSF").
+message OmnichannelSetting {
+  optional string name = 1;
 
-  repeated LiaCountrySettings country_settings = 2;
+  optional string region_code = 2;
 
-  optional string kind = 3;
+  // LSF_TYPE_UNSPECIFIED | GHLSF | MHLSF_BASIC | MHLSF_FULL. Folds the old
+  // `hostedLocalStorefrontActive` (-> GHLSF) and `omnichannelExperience.lsfType`
+  // (-> MHLSF_BASIC / MHLSF_FULL) into a single enum.
+  optional string lsf_type = 3;
+
+  // Local product inventory feed (was `inventory.status`).
+  optional OmnichannelFeatureState in_stock = 4;
+
+  // In-store pickup (was `storePickupActive` / `omnichannelExperience.pickupType`).
+  optional OmnichannelFeatureState pickup = 5;
+
+  // POS / Local Feeds Partnership link (was `posDataProvider`).
+  optional LfpLink lfp_link = 6;
+
+  // On-display-to-order (was `onDisplayToOrder`).
+  optional OmnichannelFeatureState odo = 7;
+
+  // Merchant "about" page (was `about`).
+  optional OmnichannelFeatureState about = 8;
+
+  // Inventory-verification workflow + contact (was the
+  // `inventoryVerificationContact*` fields under `inventory`).
+  optional InventoryVerification inventory_verification = 9;
 }
 
-message LiaCountrySettings {
-  optional string country = 1;
+// Shared {uri, state} shape for in_stock / pickup / odo / about. `state` is an
+// enum NAME string: STATE_UNSPECIFIED | ACTIVE | FAILED | RUNNING | ACTION_REQUIRED.
+message OmnichannelFeatureState {
+  optional string uri = 1;
 
-  optional LiaInventorySettings inventory = 2;
-
-  optional LiaOnDisplayToOrderSettings on_display_to_order = 3;
-
-  optional bool hosted_local_storefront_active = 5;
-
-  optional bool store_pickup_active = 6;
-
-  optional LiaAboutPageSettings about = 7;
-
-  optional LiaPosDataProvider pos_data_provider = 8;
-
-  optional LiaOmnichannelExperience omnichannel_experience = 9;
+  optional string state = 2;
 }
 
-message LiaPosDataProvider {
-  optional uint64 pos_data_provider_id = 1;
+message LfpLink {
+  optional string lfp_provider = 1;
 
-  optional string pos_external_account_id = 2;
+  optional string external_account_id = 2;
+
+  optional string state = 3;
 }
 
-message LiaInventorySettings {
-  optional string status = 1;
+message InventoryVerification {
+  // STATE_UNSPECIFIED | ACTION_REQUIRED | INACTIVE | RUNNING | SUCCEEDED | SUSPENDED.
+  optional string state = 1;
 
-  optional string inventory_verification_contact_name = 2;
+  optional string contact = 2;
 
-  optional string inventory_verification_contact_email = 3;
+  optional string contact_email = 3;
 
-  optional string inventory_verification_contact_status = 4;
-}
-
-message LiaOnDisplayToOrderSettings {
-  optional string status = 1;
-
-  optional string shipping_cost_policy_url = 2;
-}
-
-message LiaAboutPageSettings {
-  optional string status = 1;
-
-  optional string url = 2;
-}
-
-message LiaOmnichannelExperience {
-  optional string country = 1;
-
-  optional string lsf_type = 2;
-
-  repeated string pickup_types = 3;
+  // STATE_UNSPECIFIED | ACTIVE | FAILED | RUNNING | ACTION_REQUIRED.
+  optional string contact_state = 4;
 }

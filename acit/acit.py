@@ -25,6 +25,7 @@ from absl import flags
 from absl import logging
 from acit import gaql
 from acit import merchant_accounts
+from acit import merchant_lia
 from acit import merchant_products
 from acit import resource_downloader
 from etils import epath
@@ -228,18 +229,18 @@ _ACIT_MC_OUTPUT_DIR = 'merchant_center'
 
 _ACIT_MC_SHIPPINGSETTINGS_RESOURCE = 'shippingsettings'
 
-# NOTE: The `accounts` resource (Phase 1) and the `products`/`productstatuses`
-# resources (Phase 2) are no longer pulled from the Content API here. Accounts
-# are ingested via `merchant_accounts` and products via `merchant_products`, both
-# in the native Merchant API v1 shape (in v1 a `Product` already carries its
-# status, so `productstatuses` no longer exists as a separate collection). The
-# Content-API account-level resources below (liasettings, shippingsettings) are
-# still rolled down from MCAs: each resulting file has exactly one entry, with a
-# 'children' key when from an MCA.
+# NOTE: The `accounts` (Phase 1), `products`/`productstatuses` (Phase 2) and
+# `liasettings` (Phase 3) resources are no longer pulled from the Content API
+# here. Accounts are ingested via `merchant_accounts`, products via
+# `merchant_products`, and LIA/omnichannel settings via `merchant_lia`, all in the
+# native Merchant API v1 shape (in v1 a `Product` already carries its status, so
+# `productstatuses` no longer exists; and `liasettings` is replaced by
+# per-(sub)account `OmnichannelSettings`). The Content-API account-level resource
+# below (shippingsettings) is still rolled down from MCAs: each resulting file has
+# exactly one entry, with a 'children' key when from an MCA.
 
 # Additional resources which are only available to admins.
 _ACIT_ACCOUNT_ADMIN_RESOURCES = [
-    'liasettings',
     _ACIT_MC_SHIPPINGSETTINGS_RESOURCE,
 ]
 
@@ -543,6 +544,14 @@ def main(_):
   # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
   # unchanged); the Beam stage splits out status and derives the channel.
   merchant_products.download_products(creds, product_account_ids, mc_path)
+
+  # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
+  # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
+  # v1 has no MCA roll-down and the aggregator itself is not a valid parent, so
+  # we list per (sub)account directly (same account set as products). Admin-gated,
+  # matching the old `liasettings` pull.
+  if _ADMIN_RIGHTS.value:
+    merchant_lia.download_omnichannel_settings(creds, product_account_ids, mc_path)
 
   # Process the remaining (still Content-API) standalone account-level admin
   # resources in parallel.

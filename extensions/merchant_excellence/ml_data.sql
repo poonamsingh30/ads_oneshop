@@ -33,39 +33,39 @@ WITH
     JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
       ON C.parent_account = P.account_id
   ),
+  -- Phase 3: native Merchant API v1 omnichannel settings. The `liasettings` table
+  -- is now FLAT -- one row per (sub-/standalone) account with a repeated per-region
+  -- `omnichannel_settings` list. The old children-only roll-down (`L.children`) is
+  -- gone; the downstream `Account` CTE already INNER JOINs to the parent so only
+  -- MCA sub-accounts survive. Status strings became enum NAME strings; the
+  -- hostedLocalStorefront + mHLSF signals folded into the single `lsf_type` enum.
   Lia AS (
     SELECT DISTINCT
-      C.account_id AS merchant_id,
+      L.account_id AS merchant_id,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
+        FROM L.omnichannel_settings
         WHERE
-          inventory.status = 'active'
-          AND inventory.inventory_verification_contact_status = 'active'
-          AND about.status = 'active'
+          in_stock.state = 'ACTIVE'
+          AND inventory_verification.contact_state = 'ACTIVE'
+          AND about.state = 'ACTIVE'
       ) AS lia_has_lia_implemented,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
-        WHERE
-          hosted_local_storefront_active
-          OR omnichannel_experience.lsf_type IN ('mhlsfBasic', 'mhlsfFull')
+        FROM L.omnichannel_settings
+        WHERE lsf_type IN ('GHLSF', 'MHLSF_BASIC', 'MHLSF_FULL')
       ) AS lia_has_mhlsf_implemented,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
-        WHERE
-          store_pickup_active
-          OR ARRAY_LENGTH(omnichannel_experience.pickup_types) > 0
+        FROM L.omnichannel_settings
+        WHERE pickup.state = 'ACTIVE'
       ) AS lia_has_store_pickup_implemented,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
-        WHERE on_display_to_order.status = 'active'
+        FROM L.omnichannel_settings
+        WHERE odo.state = 'ACTIVE'
       ) AS lia_has_odo_implemented
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L,
-      L.children AS C
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
   ),
   AccountLevelShipping AS (
   SELECT DISTINCT
