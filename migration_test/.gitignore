@@ -8,6 +8,13 @@ new_products/
 old_liasettings/
 new_liasettings/
 compare_liasettings_result.json
+old_shippingsettings/
+new_shippingsettings/
+compare_shippingsettings_result.json
+# Archived per-phase scratch data under completed/
+completed/**/old_*/
+completed/**/new_*/
+completed/**/*_result.json
 *.jsonl
 *.jsonlines
 __pycache__/

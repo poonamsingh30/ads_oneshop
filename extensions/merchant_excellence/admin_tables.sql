@@ -45,111 +45,48 @@ CREATE TABLE IF NOT EXISTS ${PROJECT_NAME}.${DATASET_NAME}.liasettings (
 );
 
 CREATE TABLE IF NOT EXISTS ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings (
-    children ARRAY<
+    account_id INT64,
+    services ARRAY<
         STRUCT<
-            settings STRUCT<
-                accountId INT64,
-                services ARRAY<
-                    STRUCT<
-                        deliveryTime STRUCT<
-                            handlingBusinessDayConfig STRUCT<businessDays ARRAY<STRING>>,
-                            maxTransitTimeInDays INT64,
-                            minTransitTimeInDays INT64,
-                            maxHandlingTimeInDays INT64,
-                            minHandlingTimeInDays INT64,
-                            cutoffTime STRUCT<timezone STRING, minute INT64, hour INT64>
-                        >,
-                        rateGroups ARRAY<
-                            STRUCT<
-                                applicableShippingLabels ARRAY<STRING>,
-                                name STRING,
-                                mainTable STRUCT<
-                                    name STRING,
-                                    `rows` ARRAY<
-                                        STRUCT<
-                                            cells ARRAY<
-                                                STRUCT<
-                                                    flatRate STRUCT<currency STRING, value FLOAT64>
-                                                >
-                                            >
-                                        >
-                                    >,
-                                    rowHeaders STRUCT<
-                                        prices ARRAY<
-                                            STRUCT<currency STRING, value FLOAT64>
-                                        >
-                                    >,
-                                    columnHeaders STRUCT<
-                                        prices ARRAY<
-                                            STRUCT<currency STRING, value FLOAT64>
-                                        >
-                                    >
-                                >,
-                                singleValue STRUCT<
-                                    flatRate STRUCT<currency STRING, value FLOAT64>
-                                >
-                            >
-                        >,
-                        eligibility STRING,
-                        shipmentType STRING,
-                        currency STRING,
-                        deliveryCountry STRING,
-                        active BOOL,
-                        name STRING
-                    >
-                >
-            >
-        >
-    >,
-    settings STRUCT<
-        accountId INT64,
-        services ARRAY<
-            STRUCT<
-                deliveryTime STRUCT<
-                    handlingBusinessDayConfig STRUCT<businessDays ARRAY<STRING>>,
-                    maxTransitTimeInDays INT64,
-                    minTransitTimeInDays INT64,
-                    maxHandlingTimeInDays INT64,
-                    minHandlingTimeInDays INT64,
-                    cutoffTime STRUCT<timezone STRING, minute INT64, hour INT64>
-                >,
-                rateGroups ARRAY<
-                    STRUCT<
-                        applicableShippingLabels ARRAY<STRING>,
+            service_name STRING,
+            active BOOL,
+            delivery_countries ARRAY<STRING>,
+            currency_code STRING,
+            shipment_type STRING,
+            delivery_time STRUCT<
+                min_transit_days INT64,
+                max_transit_days INT64,
+                min_handling_days INT64,
+                max_handling_days INT64,
+                cutoff_time STRUCT<hour INT64, minute INT64, time_zone STRING>,
+                handling_business_day_config STRUCT<business_days ARRAY<STRING>>
+            >,
+            rate_groups ARRAY<
+                STRUCT<
+                    applicable_shipping_labels ARRAY<STRING>,
+                    name STRING,
+                    single_value STRUCT<
+                        flat_rate STRUCT<amount_micros INT64, currency_code STRING>
+                    >,
+                    main_table STRUCT<
                         name STRING,
-                        mainTable STRUCT<
-                            name STRING,
-                            `rows` ARRAY<
-                                STRUCT<
-                                    cells ARRAY<
-                                        STRUCT<
-                                            flatRate STRUCT<currency STRING, value FLOAT64>
-                                        >
+                        `rows` ARRAY<
+                            STRUCT<
+                                cells ARRAY<
+                                    STRUCT<
+                                        flat_rate STRUCT<amount_micros INT64, currency_code STRING>
                                     >
-                                >
-                            >,
-                            rowHeaders STRUCT<
-                                prices ARRAY<
-                                    STRUCT<currency STRING, value FLOAT64>
-                                >
-                            >,
-                            columnHeaders STRUCT<
-                                prices ARRAY<
-                                    STRUCT<currency STRING, value FLOAT64>
                                 >
                             >
                         >,
-                        singleValue STRUCT<
-                            flatRate STRUCT<currency STRING, value FLOAT64>
+                        row_headers STRUCT<
+                            prices ARRAY<STRUCT<amount_micros INT64, currency_code STRING>>
+                        >,
+                        column_headers STRUCT<
+                            prices ARRAY<STRUCT<amount_micros INT64, currency_code STRING>>
                         >
                     >
-                >,
-                eligibility STRING,
-                shipmentType STRING,
-                currency STRING,
-                deliveryCountry STRING,
-                active BOOL,
-                name STRING
+                >
             >
         >
     >

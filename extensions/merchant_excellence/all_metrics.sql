@@ -87,18 +87,12 @@ WITH
     FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
   ),
   AllShippingData AS (
+    -- Phase 4: native Merchant API v1 flat per-account shipping settings. The
+    -- old {settings, children[]} envelope is gone; each row is one account.
     SELECT
-      settings.accountId,
-      settings.services
+      account_id AS accountId,
+      services
     FROM ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings
-    WHERE ARRAY_LENGTH(children) = 0
-    UNION ALL
-    SELECT
-      CH.settings.accountId,
-      CH.settings.services
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings AS SS,
-      SS.children AS CH
   ),
   AccountLevelShipping AS (
     SELECT DISTINCT
@@ -108,35 +102,35 @@ WITH
         SELECT *
         FROM SS.services
         WHERE
-          deliveryTime.maxTransitTimeInDays IS NOT NULL
-          AND deliveryTime.minTransitTimeInDays IS NOT NULL
-          AND deliveryTime.minHandlingTimeInDays IS NOT NULL
-          AND deliveryTime.maxHandlingTimeInDays IS NOT NULL
+          delivery_time.max_transit_days IS NOT NULL
+          AND delivery_time.min_transit_days IS NOT NULL
+          AND delivery_time.min_handling_days IS NOT NULL
+          AND delivery_time.max_handling_days IS NOT NULL
       ) AS has_account_level_shipping_speed,
       EXISTS(
         SELECT *
         FROM SS.services
         WHERE
-          deliveryTime.maxTransitTimeInDays IS NOT NULL
-          AND deliveryTime.maxHandlingTimeInDays IS NOT NULL
-          AND deliveryTime.maxTransitTimeInDays + deliveryTime.maxHandlingTimeInDays <= 3
+          delivery_time.max_transit_days IS NOT NULL
+          AND delivery_time.max_handling_days IS NOT NULL
+          AND delivery_time.max_transit_days + delivery_time.max_handling_days <= 3
       ) AS has_account_level_fast_shipping,
       EXISTS(
         SELECT *
         FROM
           SS.services AS S,
-          S.rateGroups AS RG,
-          RG.mainTable.rows AS RS,
+          S.rate_groups AS RG,
+          RG.main_table.rows AS RS,
           RS.cells AS C
         WHERE
-          C.flatRate.value = 0
+          C.flat_rate.amount_micros = 0
       )
         OR EXISTS(
           SELECT *
           FROM
             SS.services AS S,
-            S.rateGroups AS RG
-          WHERE RG.singleValue.flatRate.value = 0
+            S.rate_groups AS RG
+          WHERE RG.single_value.flat_rate.amount_micros = 0
         ) AS has_account_level_free_shipping
     FROM AllShippingData AS SS
   ),
