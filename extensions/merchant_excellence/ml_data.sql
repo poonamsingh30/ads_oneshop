@@ -313,9 +313,12 @@ SELECT
   P.age_group IS NOT NULL AS has_age_group,
   P.gender IS NOT NULL AS has_gender,
   IFNULL(P.size, '') != '' AS has_size,
-  P.lia_has_mhlsf_implemented AS has_mhlsf_implemented,
-  P.lia_has_store_pickup_implemented AS has_store_pickup_implemented,
-  P.lia_has_odo_implemented AS has_odo_implemented,
+  -- Accounts with no row in the (flat, native-v1) liasettings table get NULL from
+  -- the LEFT JOIN; coalesce to FALSE to preserve the pre-migration explicit-False
+  -- semantics ("not implemented") for these ML features.
+  IFNULL(P.lia_has_mhlsf_implemented, FALSE) AS has_mhlsf_implemented,
+  IFNULL(P.lia_has_store_pickup_implemented, FALSE) AS has_store_pickup_implemented,
+  IFNULL(P.lia_has_odo_implemented, FALSE) AS has_odo_implemented,
   IFNULL(P.sale_price.amount_micros, 0) > 0 AS has_sale_price,
   ARRAY_LENGTH(P.additional_image_links) > 0 AS has_additional_images,
   P.impressions AS impressions_30days,
