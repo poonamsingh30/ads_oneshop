@@ -22,9 +22,18 @@ To run OneShop, you will need:
 
  - A Google Cloud Platform project
  - A Google Ads Developer Token
+ - Your Google Cloud project registered with your Merchant Center account
 
 Please see the README for instructions for obtaining a Google Ads developer
 token if you do not have one already.
+
+> [!IMPORTANT]
+> The Merchant API requires the Google Cloud project you use for authentication
+> to be registered with your Merchant Center account. This is a one-time setup
+> performed by a user with **Admin** access (via the
+> [developer registration](https://developers.google.com/merchant/api/guides/quickstart/registration)
+> `registerGcp` call), and each Cloud project can be registered with only one
+> Merchant Center account.
 
 <walkthrough-project-setup billing="true"></walkthrough-project-setup>
 
@@ -33,7 +42,7 @@ token if you do not have one already.
 
 Enable the required APIs for this project.
 
-<walkthrough-enable-apis apis="serviceusage.googleapis.com,iam.googleapis.com,googleads.googleapis.com,shoppingcontent.googleapis.com,cloudresourcemanager.googleapis.com">
+<walkthrough-enable-apis apis="serviceusage.googleapis.com,iam.googleapis.com,googleads.googleapis.com,merchantapi.googleapis.com,cloudresourcemanager.googleapis.com">
 </walkthrough-enable-apis>
 
 
@@ -85,7 +94,7 @@ NOTE: This section is only required if your application is **not** internal-only
     </walkthrough-spotlight-pointer> search for the Google Ads API, check the
     box for the first option to choose it.
 
-1.  Do the same for Content API for Shopping. Choose the first (content) scope.
+1.  Do the same for the Merchant API. Choose the first (content) scope.
 
 1.  Click
     <walkthrough-spotlight-pointer locator="text('Update')">
